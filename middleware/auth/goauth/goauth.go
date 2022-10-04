@@ -24,19 +24,11 @@ const (
 	tokenType = "Bearer"
 )
 
-var ctx = context.Background()
 var GoAuthClient IGoAuth
 
 type IGoAuth interface {
-	GetTokenFromRedis(clientId string) (interface{}, error)
-	GetUserFromRedis(clientId string) (interface{}, error)
-	InsertClientToRedis(client AuthClient) error
-	DeleteClientFromRedis(client AuthClient) error
-	ClientCredential(client AuthClient, isRefresh bool) (AuthClient, error)
-	CheckClientInRedis(client AuthClient) (AuthClient, error)
-	CheckTokenInRedis(token string) (AuthClient, error)
-	CreateClient(client AuthClient) AuthClient
-	CreateClientResponse(client AuthClient, isRefresh bool) (AuthClient, error)
+	ClientCredential(ctx context.Context, client AuthClient, isRefresh bool) (AuthClient, error)
+	CheckTokenInRedis(ctx context.Context, token string) (AuthClient, error)
 }
 
 type GoAuth struct {
@@ -48,17 +40,17 @@ type GoAuth struct {
 }
 
 type AuthClient struct {
-	ClienId      string            `json:"client_id"`
-	UserId       string            `json:"user_id"`
-	Token        string            `json:"token"`
-	RefreshToken string            `json:"refresh_token"`
-	CreatedTime  time.Time         `json:"created_at"`
-	ExpiredTime  time.Time         `json:"expired_at"`
-	ExpiredIn    int               `json:"expired_in"`
-	Scope        string            `json:"scope"`
-	TokenType    string            `json:"token_type"`
-	JWT          string            `json:"jwt"`
-	UserData     map[string]string `json:"-"`
+	ClienId      string                 `json:"client_id"`
+	UserId       string                 `json:"user_id"`
+	Token        string                 `json:"token"`
+	RefreshToken string                 `json:"refresh_token"`
+	CreatedTime  time.Time              `json:"created_at"`
+	ExpiredTime  time.Time              `json:"expired_at"`
+	ExpiredIn    int                    `json:"expired_in"`
+	Scopes       []string               `json:"scope"`
+	TokenType    string                 `json:"token_type"`
+	JWT          string                 `json:"jwt"`
+	UserData     map[string]interface{} `json:"-"`
 }
 
 func NewGoAuth(client GoAuth) (IGoAuth, error) {
@@ -91,7 +83,7 @@ func NewGoAuth(client GoAuth) (IGoAuth, error) {
 	return g, nil
 }
 
-func GenerateJWT(id string, data map[string]string) string {
+func GenerateJWT(id string, data map[string]interface{}) string {
 	claim := jwt.MapClaims{
 		"id": id,
 	}
@@ -105,7 +97,7 @@ func GenerateJWT(id string, data map[string]string) string {
 	return jwtToken
 }
 
-func (g *GoAuth) GetTokenFromRedis(clientId string) (interface{}, error) {
+func (g *GoAuth) getTokenFromRedis(ctx context.Context, clientId string) (interface{}, error) {
 	res, err := g.RedisClient.HMGet(ctx, g.RedisTokenKey, clientId).Result()
 	if err != nil {
 		return nil, err
@@ -118,6 +110,7 @@ func (g *GoAuth) GetTokenFromRedis(clientId string) (interface{}, error) {
 		if ok {
 			err := json.Unmarshal([]byte(authClientRes), &authClient)
 			if err != nil {
+				log.Error(err)
 				return nil, err
 			}
 		}
@@ -125,7 +118,7 @@ func (g *GoAuth) GetTokenFromRedis(clientId string) (interface{}, error) {
 	}
 }
 
-func (g *GoAuth) GetUserFromRedis(clientId string) (interface{}, error) {
+func (g *GoAuth) getUserFromRedis(ctx context.Context, clientId string) (interface{}, error) {
 	res, err := g.RedisClient.HMGet(ctx, g.RedisUserKey, clientId).Result()
 	if err != nil {
 		return nil, err
@@ -145,7 +138,7 @@ func (g *GoAuth) GetUserFromRedis(clientId string) (interface{}, error) {
 	}
 }
 
-func (g *GoAuth) InsertClientToRedis(client AuthClient) error {
+func (g *GoAuth) insertClientToRedis(ctx context.Context, client AuthClient) error {
 	clientId := client.ClienId
 	token := client.Token
 	jsonClient, err := json.Marshal(client)
@@ -164,7 +157,7 @@ func (g *GoAuth) InsertClientToRedis(client AuthClient) error {
 	return nil
 }
 
-func (g *GoAuth) DeleteClientFromRedis(client AuthClient) error {
+func (g *GoAuth) deleteClientFromRedis(ctx context.Context, client AuthClient) error {
 	clientId := client.ClienId
 	token := client.Token
 	err := g.RedisClient.HDel(ctx, g.RedisUserKey, clientId).Err()
@@ -178,7 +171,7 @@ func (g *GoAuth) DeleteClientFromRedis(client AuthClient) error {
 	return err
 }
 
-func (g *GoAuth) CreateClient(client AuthClient) AuthClient {
+func (g *GoAuth) mapClientData(client AuthClient) AuthClient {
 	currentTime := time.Now().Local()
 	expiredIn := 0
 	if client.ExpiredIn != 0 {
@@ -194,28 +187,27 @@ func (g *GoAuth) CreateClient(client AuthClient) AuthClient {
 		RefreshToken: GenerateRefreshToken(client.ClienId),
 		CreatedTime:  currentTime,
 		ExpiredTime:  expiredTime,
-		Scope:        client.Scope,
+		Scopes:       client.Scopes,
 		TokenType:    g.TokenType,
 	}
 	accesstoken.JWT = GenerateJWT(client.UserId, client.UserData)
 	return accesstoken
 }
 
-func (g *GoAuth) ClientCredential(client AuthClient, isRefresh bool) (AuthClient, error) {
-	client, err := g.CheckClientInRedis(client)
+func (g *GoAuth) ClientCredential(ctx context.Context, client AuthClient, isRefresh bool) (AuthClient, error) {
+	client, err := g.checkClientInRedis(ctx, client)
 	if err != nil {
 		return client, err
 	}
-	clientResponse, err := g.CreateClientResponse(client, isRefresh)
+	clientResponse, err := g.mapClientResponse(client, isRefresh)
 	if err != nil {
 		return client, err
 	}
 	return clientResponse, nil
 }
-func (g *GoAuth) CheckClientInRedis(client AuthClient) (AuthClient, error) {
-	log.Info("ClientCredential - clientId : ", client.ClienId)
+func (g *GoAuth) checkClientInRedis(ctx context.Context, client AuthClient) (AuthClient, error) {
 	var clientNew AuthClient
-	clientRes, err := g.GetUserFromRedis(client.ClienId)
+	clientRes, err := g.getUserFromRedis(ctx, client.ClienId)
 	if err != nil {
 		return clientNew, err
 	}
@@ -227,30 +219,30 @@ func (g *GoAuth) CheckClientInRedis(client AuthClient) (AuthClient, error) {
 		}
 	}
 	if clientNew.ClienId == "" {
-		clientNew = g.CreateClient(client)
-		if err := g.InsertClientToRedis(clientNew); err != nil {
+		clientNew = g.mapClientData(client)
+		if err := g.insertClientToRedis(ctx, clientNew); err != nil {
 			return clientNew, err
 		}
 	} else {
 		currentTime := time.Now().Local()
 		if clientNew.ExpiredTime.Sub(currentTime) <= 0 {
-			if err := g.DeleteClientFromRedis(clientNew); err != nil {
+			if err := g.deleteClientFromRedis(ctx, clientNew); err != nil {
 				return clientNew, err
 			}
-			clientNew = g.CreateClient(client)
-			if err := g.InsertClientToRedis(clientNew); err != nil {
+			clientNew = g.mapClientData(client)
+			if err := g.insertClientToRedis(ctx, clientNew); err != nil {
 				return clientNew, err
 			}
 		} else {
-			log.Info("ClientCredential - token already existed")
+			log.Info("token already existed")
 		}
 	}
 	return clientNew, nil
 }
 
-func (g *GoAuth) CheckTokenInRedis(token string) (AuthClient, error) {
+func (g *GoAuth) CheckTokenInRedis(ctx context.Context, token string) (AuthClient, error) {
 	var client AuthClient
-	clientRes, err := g.GetTokenFromRedis(token)
+	clientRes, err := g.getTokenFromRedis(ctx, token)
 	if err != nil {
 		return client, err
 	}
@@ -265,7 +257,7 @@ func (g *GoAuth) CheckTokenInRedis(token string) (AuthClient, error) {
 	return client, nil
 }
 
-func (g *GoAuth) CreateClientResponse(client AuthClient, isRefresh bool) (AuthClient, error) {
+func (g *GoAuth) mapClientResponse(client AuthClient, isRefresh bool) (AuthClient, error) {
 	response := AuthClient{}
 	if client.Token == "" {
 		return response, errors.New("token is null")
@@ -281,7 +273,7 @@ func (g *GoAuth) CreateClientResponse(client AuthClient, isRefresh bool) (AuthCl
 			ExpiredIn:   int(client.ExpiredTime.Sub(currentTime).Seconds()),
 			TokenType:   g.TokenType,
 			JWT:         client.JWT,
-			Scope:       client.Scope,
+			Scopes:      client.Scopes,
 		}
 	} else {
 		response = AuthClient{
@@ -292,7 +284,7 @@ func (g *GoAuth) CreateClientResponse(client AuthClient, isRefresh bool) (AuthCl
 			ExpiredTime:  client.ExpiredTime,
 			ExpiredIn:    int(client.ExpiredTime.Sub(currentTime).Seconds()),
 			TokenType:    g.TokenType,
-			Scope:        client.Scope,
+			Scopes:       client.Scopes,
 			JWT:          client.JWT,
 			RefreshToken: client.RefreshToken,
 		}

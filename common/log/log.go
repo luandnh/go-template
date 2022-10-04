@@ -61,7 +61,7 @@ func Infof(format string, msg ...interface{}) {
 	srcFile := filepath.Base(path)
 	log.WithFields(log.Fields{
 		"meta": fmt.Sprintf("%s:%d", srcFile, numLine),
-	}).Infof(format, msg)
+	}).Infof(format, msg...)
 }
 
 func Warningf(format string, msg ...interface{}) {
@@ -69,7 +69,7 @@ func Warningf(format string, msg ...interface{}) {
 	srcFile := filepath.Base(path)
 	log.WithFields(log.Fields{
 		"meta": fmt.Sprintf("%s:%d", srcFile, numLine),
-	}).Warningf(format, msg)
+	}).Warningf(format, msg...)
 }
 
 func Errorf(format string, err ...interface{}) {
@@ -77,7 +77,7 @@ func Errorf(format string, err ...interface{}) {
 	srcFile := filepath.Base(path)
 	log.WithFields(log.Fields{
 		"meta": fmt.Sprintf("%s:%d", srcFile, numLine),
-	}).Errorf(format, err)
+	}).Errorf(format, err...)
 }
 
 func Debugf(format string, value ...interface{}) {
@@ -85,7 +85,7 @@ func Debugf(format string, value ...interface{}) {
 	srcFile := filepath.Base(path)
 	log.WithFields(log.Fields{
 		"meta": fmt.Sprintf("%s:%d", srcFile, numLine),
-	}).Debugf(format, value)
+	}).Debugf(format, value...)
 }
 
 func Fatalf(format string, value ...interface{}) {
@@ -93,5 +93,5 @@ func Fatalf(format string, value ...interface{}) {
 	srcFile := filepath.Base(path)
 	log.WithFields(log.Fields{
 		"meta": fmt.Sprintf("%s:%d", srcFile, numLine),
-	}).Fatalf(format, value)
+	}).Fatalf(format, value...)
 }
