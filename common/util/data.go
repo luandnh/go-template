@@ -1,8 +1,12 @@
 package util
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -15,25 +19,34 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-func ParseString(str string) string {
+func ParseString(value interface{}) string {
+	str, ok := value.(string)
+	if !ok {
+		return str
+	}
 	str = strings.Replace(str, "\n", "", -1)
 	str = strings.Trim(str, "\r\n")
 	str = strings.TrimSpace(str)
 	return str
 }
 
-func ParseInt64(str string) int64 {
-	str = ParseString(str)
+func ParseStringToInt(str string) int {
 	i, err := strconv.Atoi(str)
 	if err != nil {
-		i = -1
+		return 0
 	}
-	return int64(i)
+	return i
 }
 
-func ParseInt(str string) int {
-	str = ParseString(str)
-	i, err := strconv.Atoi(str)
+func ParseFloat64(value interface{}) float64 {
+	typeData := reflect.ValueOf(value)
+	str := ""
+	if typeData.Kind() == reflect.String {
+		str = ParseString(value)
+	} else {
+		str = fmt.Sprintf("%v", value)
+	}
+	i, err := strconv.ParseFloat(str, 64)
 	if err != nil {
 		i = 0
 	}
@@ -58,15 +71,6 @@ func ParseLimit(limit string) int {
 	return i
 }
 
-func ParseFloat64(str string) float64 {
-	str = ParseString(str)
-	i, err := strconv.ParseFloat(str, 64)
-	if err != nil {
-		i = 0
-	}
-	return i
-}
-
 var (
 	timezone = ""
 )
@@ -79,6 +83,14 @@ func ParseTime(str string) time.Time {
 		t = time.Now()
 	}
 	return t
+}
+
+func ParseMapToString(value interface{}) (string, error) {
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 func removeAccents(s string) string {
@@ -169,13 +181,6 @@ func CheckStartEndDate(startDate, endDate string) (time.Time, time.Time, error) 
 	return startTime, endTime, nil
 }
 
-func GetStartEndCurrent() (time.Time, time.Time) {
-	current := time.Now()
-	startTime := ParseFromStringToTime(TimeToStringLayout(current, "2006-01-02") + " 00:00:00")
-	endTime := ParseFromStringToTime(TimeToStringLayout(current, "2006-01-02") + " 23:59:59")
-	return startTime, endTime
-}
-
 func ParseQueryArray(slice []string) []string {
 	result := make([]string, 0)
 	for _, v := range slice {
@@ -196,4 +201,88 @@ func RemoveDuplicate(array []string) []string {
 		result = append(result, x)
 	}
 	return result
+}
+
+func InArray(item interface{}, array interface{}) bool {
+	arr := reflect.ValueOf(array)
+	if arr.Kind() != reflect.Slice {
+		return false
+	}
+	for i := 0; i < arr.Len(); i++ {
+		if arr.Index(i).Interface() == item {
+			return true
+		}
+	}
+	return false
+}
+
+func GetLocalTimeOfTime(val time.Time) time.Time {
+	currentYear, currentMonth, currentDay := val.Date()
+	loc, _ := time.LoadLocation("UTC")
+	return time.Date(currentYear, currentMonth, currentDay, 0, 0, 0, 0, loc)
+}
+
+func ParseStartEndTime(startTimeStr, endTimeStr string, allowZero bool) (time.Time, time.Time, error) {
+	today := time.Now()
+	currentYear, currentMonth, currentDay := today.Date()
+	loc, _ := time.LoadLocation("UTC")
+	startTime := time.Date(currentYear, currentMonth, currentDay, 0, 0, 0, 0, loc)
+	endTime := time.Date(currentYear, currentMonth, currentDay, 23, 59, 59, 0, loc)
+	if allowZero && len(startTimeStr) < 1 {
+		startTime = time.Time{}
+	} else if len(startTimeStr) > 1 {
+		startTime = ParseFromStringToTime(startTimeStr)
+		if startTime.IsZero() {
+			return time.Time{}, time.Time{}, errors.New("start_time is invalid")
+		}
+	}
+	if allowZero && len(endTimeStr) < 1 {
+		endTime = time.Time{}
+	} else if len(endTimeStr) > 1 {
+		endTime = ParseFromStringToTime(endTimeStr)
+		if endTime.IsZero() {
+			return time.Time{}, time.Time{}, errors.New("end_time is invalid")
+		}
+	}
+	if startTime.After(endTime) {
+		return time.Time{}, time.Time{}, errors.New("start_date must be after end_date")
+	}
+	return startTime, endTime, nil
+}
+
+func GetStartEndCurrent() (time.Time, time.Time) {
+	today := time.Now()
+	currentYear, currentMonth, currentDay := today.Date()
+	loc, _ := time.LoadLocation("UTC")
+	startTime := time.Date(currentYear, currentMonth, currentDay, 0, 0, 0, 0, loc)
+	endTime := time.Date(currentYear, currentMonth, currentDay, 23, 59, 59, 0, loc)
+	return startTime, endTime
+}
+
+func ParsesStringToStruct(value string, dest any) error {
+	if err := json.Unmarshal([]byte(value), dest); err != nil {
+		return err
+	}
+	return nil
+}
+
+func StringToBase64(str string) string {
+	data := []byte(str)
+	val := base64.StdEncoding.EncodeToString(data)
+	return val
+}
+
+func ParseStructToMap(value any, dest any) error {
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(bytes, dest); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ToLower(value string) string {
+	return strings.ToLower(value)
 }

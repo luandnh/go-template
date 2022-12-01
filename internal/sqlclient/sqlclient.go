@@ -15,8 +15,14 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 )
 
+const (
+	MYSQL      = "mysql"
+	POSTGRESQL = "postgresql"
+)
+
 type ISqlClientConn interface {
 	GetDB() *bun.DB
+	GetDriver() string
 }
 
 type SqlConfig struct {
@@ -56,7 +62,7 @@ func NewSqlClient(config SqlConfig) ISqlClientConn {
 
 func (c *SqlClientConn) Connect() (err error) {
 	switch c.Driver {
-	case "mysql":
+	case MYSQL:
 		//username:password@protocol(address)/dbname?param=value
 		connectionString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?readTimeout=%ds&writeTimeout=%ds", c.Username, c.Password, c.Host, c.Port, c.Database, c.ReadTimeout, c.WriteTimeout)
 		sqldb, err := sql.Open("mysql", connectionString)
@@ -69,7 +75,7 @@ func (c *SqlClientConn) Connect() (err error) {
 		db := bun.NewDB(sqldb, mysqldialect.New(), bun.WithDiscardUnknownColumns())
 		c.DB = db
 		return nil
-	case "postgresql":
+	case POSTGRESQL:
 		pgconn := pgdriver.NewConnector(
 			pgdriver.WithNetwork("tcp"),
 			pgdriver.WithAddr(fmt.Sprintf("%s:%d", c.Host, c.Port)),
@@ -97,4 +103,8 @@ func (c *SqlClientConn) Connect() (err error) {
 
 func (c *SqlClientConn) GetDB() *bun.DB {
 	return c.DB
+}
+
+func (c *SqlClientConn) GetDriver() string {
+	return c.Driver
 }

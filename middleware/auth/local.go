@@ -130,7 +130,7 @@ func validateBasicAuth(ctx context.Context, r *http.Request, username, password 
 	if passEncrypted != passCurrent {
 		return nil, errors.New("username or password is not valid")
 	}
-	return NewGoAuthUser(user.Username, user.UserUuid, nil, nil, user.DomainName, user.DomainName, user.Level, nil), nil
+	return NewGoAuthUser(user.Username, user.UserUuid, nil, nil, user.DomainUuid, user.DomainName, user.Level, nil), nil
 }
 
 func validateTokenAuth(ctx context.Context, r *http.Request, tokenString string) (auth.Info, time.Time, error) {
